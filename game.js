@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'v0.2.1-control-restore-reflect-tune';
+  const VERSION = 'v0.2.2-impulse-bounce-vector-brake';
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const timeLabel = document.getElementById('timeLabel');
@@ -32,21 +32,25 @@
   };
 
   const tuning = {
-    // v0.2.1: 操作感はv0.1.1へ戻し、反射だけ現在仕様に合わせて弱めに調整。
+    // v0.2.2: 操作感はv0.2.1を維持。衝突は円同士のインパルス計算で強めに弾く。
     accel: 760,
     activeFriction: 0.956,
     idleFriction: 0.895,
     reverseBrakeFriction: 0.84,
     maxSpeed: 365,
-    postCollisionMaxSpeed: 405,
+    postCollisionMaxSpeed: 430,
     playerRadius: 58,
-    collisionSpring: 0.88,
-    restitution: 0.56,
-    minImpact: 36,
-    edgeGripStart: 0.86,
-    edgeSaveStrength: 0.62,
-    edgeInwardAssist: 470,
-    fallForgiveness: 0.68,
+    positionCorrection: 0.74,
+    restitution: 0.82,
+    minBounceImpulse: 58,
+    separatingNudge: 36,
+    tangentDamping: 0.1,
+    minImpact: 44,
+    vectorBrakeDuration: 0.82,
+    vectorBrakeThreshold: 0.22,
+    vectorBrakeAccel: 1120,
+    vectorBrakeDrag: 3.2,
+    fallForgiveness: 0.72,
     respawnTime: 1.0,
     invulnTime: 1.05,
     wallWarning: 0.9,
@@ -83,6 +87,10 @@
       stocks: settings.stocks,
       respawnTimer: 0,
       invuln: 0,
+      hitX: 0,
+      hitY: 0,
+      hitTimer: 0,
+      hitPower: 0,
     };
   }
 
@@ -148,6 +156,14 @@
     p.vx = 0;
     p.vy = 0;
     p.squash = 0;
+    clearHitVector(p);
+  }
+
+  function clearHitVector(p) {
+    p.hitX = 0;
+    p.hitY = 0;
+    p.hitTimer = 0;
+    p.hitPower = 0;
   }
 
   function clearAllInput() {
@@ -234,7 +250,7 @@
       p.vx *= Math.pow(friction, dt * 60);
       p.vy *= Math.pow(friction, dt * 60);
 
-      applyEdgeSave(p, input, inputPower, dt);
+      applyCollisionVectorBrake(p, input, inputPower, dt);
 
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -260,33 +276,44 @@
     }
   }
 
-  function applyEdgeSave(p, input, inputPower, dt) {
-    const dx = p.x - world.cx;
-    const dy = p.y - world.cy;
-    const d = Math.hypot(dx, dy);
-    if (d <= world.arenaRadius * tuning.edgeGripStart || d <= 0.001) return;
-
-    const ox = dx / d;
-    const oy = dy / d;
-    const ix = -ox;
-    const iy = -oy;
-    const inwardInput = inputPower < tuning.deadZone ? 0 : Math.max(0, input.x * ix + input.y * iy);
-    const outwardVelocity = p.vx * ox + p.vy * oy;
-
-    // 端で中央側へ入力している時、外向き速度だけを強めに削る。
-    if (outwardVelocity > 0 && inwardInput > 0.18) {
-      const saveRate = Math.min(0.82, tuning.edgeSaveStrength * inwardInput);
-      const remove = outwardVelocity * saveRate * Math.min(1, dt * 60);
-      p.vx -= ox * remove;
-      p.vy -= oy * remove;
+  function applyCollisionVectorBrake(p, input, inputPower, dt) {
+    if (p.hitTimer <= 0) {
+      clearHitVector(p);
+      return;
     }
 
-    // 端ギリギリでは中央へ戻る操作を少しだけ補助。自動復帰ではなく、入力した時だけ効く。
-    if (inwardInput > 0.35 && d > world.arenaRadius - p.radius * 0.1) {
-      const assist = tuning.edgeInwardAssist * inwardInput * dt;
-      p.vx += ix * assist;
-      p.vy += iy * assist;
-    }
+    p.hitTimer = Math.max(0, p.hitTimer - dt);
+    if (inputPower < tuning.deadZone) return;
+
+    const hitLen = Math.hypot(p.hitX, p.hitY);
+    if (hitLen <= 0.001) return;
+
+    const hx = p.hitX / hitLen;
+    const hy = p.hitY / hitLen;
+    const againstHit = -(input.x * hx + input.y * hy);
+    if (againstHit < tuning.vectorBrakeThreshold) return;
+
+    // 衝突で吹っ飛んだ方向の速度成分だけを削る。
+    // 中央方向かどうかは見ず、最後に受けた衝突ベクトルに対して逆入力した時だけ効く。
+    const velocityAlongHit = p.vx * hx + p.vy * hy;
+    if (velocityAlongHit <= 0) return;
+
+    const brakePower = (againstHit - tuning.vectorBrakeThreshold) / (1 - tuning.vectorBrakeThreshold);
+    const timerPower = 0.45 + 0.55 * (p.hitTimer / tuning.vectorBrakeDuration);
+    const drag = velocityAlongHit * tuning.vectorBrakeDrag * brakePower * timerPower;
+    const linear = tuning.vectorBrakeAccel * brakePower * timerPower;
+    const remove = Math.min(velocityAlongHit, (linear + drag) * dt);
+
+    p.vx -= hx * remove;
+    p.vy -= hy * remove;
+  }
+
+  function rememberHitVector(p, x, y, power) {
+    const len = Math.hypot(x, y) || 1;
+    p.hitX = x / len;
+    p.hitY = y / len;
+    p.hitTimer = tuning.vectorBrakeDuration;
+    p.hitPower = Math.max(p.hitPower || 0, power);
   }
 
   function limitSpeed(p, max) {
@@ -299,6 +326,7 @@
 
   function resolveCollision(a, b) {
     if (!a.alive || !b.alive) return;
+
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     let dist = Math.hypot(dx, dy);
@@ -309,40 +337,62 @@
     const nx = dx / dist;
     const ny = dy / dist;
     const overlap = minDist - dist;
-    const push = overlap * 0.5 * tuning.collisionSpring;
 
-    a.x -= nx * push;
-    a.y -= ny * push;
-    b.x += nx * push;
-    b.y += ny * push;
+    // 位置補正：重なりをほどいて、めり込みによる連続バグを抑える。
+    const correction = overlap * 0.5 * tuning.positionCorrection;
+    a.x -= nx * correction;
+    a.y -= ny * correction;
+    b.x += nx * correction;
+    b.y += ny * correction;
 
-    const avn = a.vx * nx + a.vy * ny;
-    const bvn = b.vx * nx + b.vy * ny;
-    const rel = bvn - avn;
-    let impact = Math.abs(rel);
+    const rvx = b.vx - a.vx;
+    const rvy = b.vy - a.vy;
+    const velAlongNormal = rvx * nx + rvy * ny;
+    let impact = Math.abs(velAlongNormal);
 
-    if (rel < 0) {
-      // 同じ重さのボールとして、法線方向の速度を弾性反射させる。
-      const impulse = (-(1 + tuning.restitution) * rel) / 2;
-      a.vx -= nx * impulse;
-      a.vy -= ny * impulse;
-      b.vx += nx * impulse;
-      b.vy += ny * impulse;
-      impact = Math.max(tuning.minImpact, Math.abs(rel));
+    if (velAlongNormal < 0) {
+      // 同じ質量の円として、法線方向に弾性衝突インパルスを入れる。
+      const impulseMag = Math.max(
+        tuning.minBounceImpulse,
+        (-(1 + tuning.restitution) * velAlongNormal) / 2
+      );
+      const ix = impulseMag * nx;
+      const iy = impulseMag * ny;
+
+      a.vx -= ix;
+      a.vy -= iy;
+      b.vx += ix;
+      b.vy += iy;
+
+      // 接線方向は少しだけならす。ピンボール化しすぎず、でも弾いた感は残す。
+      const tangentX = -ny;
+      const tangentY = nx;
+      const relTangent = rvx * tangentX + rvy * tangentY;
+      const tangentImpulse = relTangent * tuning.tangentDamping * 0.5;
+      a.vx += tangentX * tangentImpulse;
+      a.vy += tangentY * tangentImpulse;
+      b.vx -= tangentX * tangentImpulse;
+      b.vy -= tangentY * tangentImpulse;
+
+      impact = Math.max(tuning.minImpact, impulseMag * 1.55);
+      rememberHitVector(a, -nx, -ny, impact);
+      rememberHitVector(b, nx, ny, impact);
     } else {
-      // めり込みだけ起きた時も、軽く離す程度の反射を入れる。
-      const nudge = Math.min(24, overlap * 1.55);
+      // すでに離れている時のめり込みは、軽い反発だけで処理する。
+      const nudge = Math.min(tuning.separatingNudge, overlap * 1.15);
       a.vx -= nx * nudge;
       a.vy -= ny * nudge;
       b.vx += nx * nudge;
       b.vy += ny * nudge;
-      impact = Math.max(tuning.minImpact, nudge * 2.7);
+      impact = Math.max(tuning.minImpact, nudge * 2.2);
+      rememberHitVector(a, -nx, -ny, impact);
+      rememberHitVector(b, nx, ny, impact);
     }
 
     limitSpeed(a, tuning.postCollisionMaxSpeed);
     limitSpeed(b, tuning.postCollisionMaxSpeed);
-    a.squash = b.squash = Math.min(1, impact / 470);
-    world.shake = Math.min(11, world.shake + impact / 58);
+    a.squash = b.squash = Math.min(1, impact / 510);
+    world.shake = Math.min(12, world.shake + impact / 62);
   }
 
   function checkFalls() {
