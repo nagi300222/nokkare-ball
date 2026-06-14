@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#17182a" />
+  <title>のっかれボールズ v0.1</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="app" class="app">
+    <section class="topbar" aria-label="ゲーム情報">
+      <div class="brand">
+        <span class="logo-dot"></span>
+        <div>
+          <p class="eyebrow">スマホ対戦プロトタイプ</p>
+          <h1>のっかれボールズ</h1>
+        </div>
+      </div>
+      <div class="hud">
+        <div class="hud-card">
+          <span>TIME</span>
+          <strong id="timeLabel">60</strong>
+        </div>
+        <div class="hud-card p1">
+          <span>RED</span>
+          <strong id="p1State">READY</strong>
+        </div>
+        <div class="hud-card p2">
+          <span>BLUE</span>
+          <strong id="p2State">READY</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage-wrap">
+      <canvas id="gameCanvas" width="1000" height="1000" aria-label="ゲーム画面"></canvas>
+      <div id="message" class="message">
+        <h2>のっかれ！</h2>
+        <p>左右のスティックを倒して、相手を場外へ押し出せ！</p>
+        <button id="startButton" type="button">スタート</button>
+      </div>
+    </section>
+
+    <section class="control-panel" aria-label="スマホ操作">
+      <div class="pad-block p1">
+        <p>1P</p>
+        <div id="joy1" class="joystick" data-player="0">
+          <span class="stick"></span>
+        </div>
+      </div>
+      <div class="center-actions">
+        <button id="resetButton" type="button">リセット</button>
+        <p>PC: WASD / 矢印キー</p>
+      </div>
+      <div class="pad-block p2">
+        <p>2P</p>
+        <div id="joy2" class="joystick" data-player="1">
+          <span class="stick"></span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
