@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'v0.2.2-impulse-bounce-vector-brake';
+  const VERSION = 'v0.2.3-video-reference-tuned';
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const timeLabel = document.getElementById('timeLabel');
@@ -32,25 +32,26 @@
   };
 
   const tuning = {
-    // v0.2.2: 操作感はv0.2.1を維持。衝突は円同士のインパルス計算で強めに弾く。
-    accel: 760,
-    activeFriction: 0.956,
-    idleFriction: 0.895,
-    reverseBrakeFriction: 0.84,
-    maxSpeed: 365,
-    postCollisionMaxSpeed: 430,
+    // v0.2.3: 参考動画からの近似チューニング。
+    // 最高速はやや重め、衝突は明確に弾くが、逆入力で吹っ飛び成分を消せる。
+    accel: 720,
+    activeFriction: 0.964,
+    idleFriction: 0.912,
+    reverseBrakeFriction: 0.835,
+    maxSpeed: 350,
+    postCollisionMaxSpeed: 455,
     playerRadius: 58,
-    positionCorrection: 0.74,
-    restitution: 0.82,
-    minBounceImpulse: 58,
-    separatingNudge: 36,
-    tangentDamping: 0.1,
-    minImpact: 44,
-    vectorBrakeDuration: 0.82,
-    vectorBrakeThreshold: 0.22,
-    vectorBrakeAccel: 1120,
-    vectorBrakeDrag: 3.2,
-    fallForgiveness: 0.72,
+    positionCorrection: 0.82,
+    restitution: 0.88,
+    minBounceImpulse: 50,
+    separatingNudge: 32,
+    tangentDamping: 0.075,
+    minImpact: 42,
+    vectorBrakeDuration: 0.95,
+    vectorBrakeThreshold: 0.18,
+    vectorBrakeAccel: 1240,
+    vectorBrakeDrag: 2.85,
+    fallForgiveness: 0.76,
     respawnTime: 1.0,
     invulnTime: 1.05,
     wallWarning: 0.9,
