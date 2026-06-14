@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'v0.1.0-local-mobile';
+  const VERSION = 'v0.2.0-vertical-stocks-reflect';
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const timeLabel = document.getElementById('timeLabel');
@@ -10,6 +10,13 @@
   const message = document.getElementById('message');
   const startButton = document.getElementById('startButton');
   const resetButton = document.getElementById('resetButton');
+  const timeSelect = document.getElementById('timeSelect');
+  const stockSelect = document.getElementById('stockSelect');
+
+  const settings = {
+    timeLimit: 60,
+    stocks: 1,
+  };
 
   const world = {
     w: 1000,
@@ -25,58 +32,94 @@
   };
 
   const tuning = {
-    accel: 980,
-    friction: 0.988,
-    maxSpeed: 485,
+    // v0.2: ぶつかった時に反射するが、逆方向入力で端でも耐えやすい設定。
+    accel: 810,
+    activeFriction: 0.956,
+    idleFriction: 0.872,
+    reverseBrakeFriction: 0.72,
+    maxSpeed: 360,
+    postCollisionMaxSpeed: 430,
     playerRadius: 58,
-    collisionSpring: 0.88,
-    collisionKick: 0.56,
+    collisionSpring: 0.96,
+    restitution: 0.78,
+    minImpact: 42,
+    edgeGripStart: 0.86,
+    edgeSaveStrength: 0.62,
+    edgeInwardAssist: 470,
+    fallForgiveness: 0.68,
+    respawnTime: 1.0,
+    invulnTime: 1.05,
     wallWarning: 0.9,
+    deadZone: 0.06,
   };
 
-  const players = [
-    makePlayer('RED', '#ff4d5a', 365, 500, 1),
-    makePlayer('BLUE', '#4bb4ff', 635, 500, -1),
-  ];
+  let players = [];
 
-  const inputs = [
+  const stickInputs = [
     { x: 0, y: 0 },
     { x: 0, y: 0 },
+  ];
+  const keyInputs = [
+    { x: 0, y: 0, active: false },
+    { x: 0, y: 0, active: false },
   ];
 
   const keys = new Set();
 
-  function makePlayer(name, color, x, y, face) {
+  function makePlayer(name, color, spawnX, spawnY, face) {
     return {
       name,
       color,
-      x,
-      y,
+      spawnX,
+      spawnY,
+      x: spawnX,
+      y: spawnY,
       vx: 0,
       vy: 0,
       radius: tuning.playerRadius,
       alive: true,
       face,
       squash: 0,
-      score: 0,
+      stocks: settings.stocks,
+      respawnTimer: 0,
+      invuln: 0,
     };
   }
 
+  function readSettings() {
+    settings.timeLimit = timeSelect.value === 'inf' ? Infinity : Number(timeSelect.value || 60);
+    settings.stocks = Math.max(1, Number(stockSelect.value || 1));
+  }
+
+  function createPlayers() {
+    players = [
+      makePlayer('RED', '#ff4d5a', 500, 355, 1),
+      makePlayer('BLUE', '#4bb4ff', 500, 645, -1),
+    ];
+  }
+
   function resetGame({ start = false } = {}) {
-    Object.assign(players[0], makePlayer('RED', '#ff4d5a', 365, 500, 1));
-    Object.assign(players[1], makePlayer('BLUE', '#4bb4ff', 635, 500, -1));
+    readSettings();
+    clearAllInput();
+    createPlayers();
     world.running = start;
     world.ended = false;
-    world.timer = 60;
+    world.timer = settings.timeLimit;
     world.lastTs = performance.now();
     world.shake = 0;
+    setSettingsLocked(start);
     message.classList.toggle('hidden', start);
     if (!start) {
       message.querySelector('h2').textContent = 'のっかれ！';
-      message.querySelector('p').textContent = '左右のスティックを倒して、相手を場外へ押し出せ！';
+      message.querySelector('p').textContent = ruleText();
       startButton.textContent = 'スタート';
     }
     updateHud();
+  }
+
+  function ruleText() {
+    const timeText = settings.timeLimit === Infinity ? '時間∞' : `${settings.timeLimit}秒`;
+    return `${timeText} / ストック${settings.stocks}。上下のスティックで相手を弾き出せ！`;
   }
 
   function startGame() {
@@ -86,6 +129,9 @@
   function endGame(title, detail) {
     world.running = false;
     world.ended = true;
+    for (const p of players) stopPlayer(p);
+    clearAllInput();
+    setSettingsLocked(false);
     message.querySelector('h2').textContent = title;
     message.querySelector('p').textContent = detail;
     startButton.textContent = 'もう一回';
@@ -93,19 +139,44 @@
     updateHud();
   }
 
+  function setSettingsLocked(locked) {
+    timeSelect.disabled = locked;
+    stockSelect.disabled = locked;
+  }
+
+  function stopPlayer(p) {
+    p.vx = 0;
+    p.vy = 0;
+    p.squash = 0;
+  }
+
+  function clearAllInput() {
+    keys.clear();
+    for (let i = 0; i < 2; i++) {
+      stickInputs[i] = { x: 0, y: 0 };
+      keyInputs[i] = { x: 0, y: 0, active: false };
+    }
+    document.querySelectorAll('.stick').forEach(stick => {
+      stick.style.transform = 'translate(-50%, -50%)';
+    });
+  }
+
   function updateHud() {
-    timeLabel.textContent = Math.max(0, Math.ceil(world.timer));
-    p1State.textContent = players[0].alive ? 'IN' : 'OUT';
-    p2State.textContent = players[1].alive ? 'IN' : 'OUT';
+    timeLabel.textContent = settings.timeLimit === Infinity ? '∞' : Math.max(0, Math.ceil(world.timer));
+    p1State.textContent = playerStateText(players[0]);
+    p2State.textContent = playerStateText(players[1]);
+  }
+
+  function playerStateText(p) {
+    if (!p) return 'READY';
+    if (p.alive) return `♥${p.stocks}`;
+    if (p.stocks > 0) return `↻${p.stocks}`;
+    return 'OUT';
   }
 
   function keyboardInput() {
-    const k1 = vectorFromKeys('KeyA', 'KeyD', 'KeyW', 'KeyS');
-    const k2 = vectorFromKeys('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown');
-
-    // キーボード操作はジョイスティック入力に上乗せ。スマホとPCの両方で遊べる。
-    if (k1.active) inputs[0] = { x: k1.x, y: k1.y };
-    if (k2.active) inputs[1] = { x: k2.x, y: k2.y };
+    keyInputs[0] = vectorFromKeys('KeyA', 'KeyD', 'KeyW', 'KeyS');
+    keyInputs[1] = vectorFromKeys('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown');
   }
 
   function vectorFromKeys(left, right, up, down) {
@@ -120,35 +191,51 @@
     return { x: 0, y: 0, active: false };
   }
 
+  function getInput(index) {
+    const key = keyInputs[index];
+    if (key.active) return { x: key.x, y: key.y };
+    return stickInputs[index];
+  }
+
   function step(dt) {
     if (!world.running) return;
     keyboardInput();
 
-    world.timer -= dt;
-    if (world.timer <= 0) {
-      const d0 = distFromCenter(players[0]);
-      const d1 = distFromCenter(players[1]);
-      if (Math.abs(d0 - d1) < 4) endGame('DRAW!', '時間切れ。ほぼ同じ位置で粘り切った！');
-      else if (d0 < d1) endGame('RED WIN!', '時間切れ。中央に近かったREDの勝ち！');
-      else endGame('BLUE WIN!', '時間切れ。中央に近かったBLUEの勝ち！');
-      return;
+    if (settings.timeLimit !== Infinity) {
+      world.timer -= dt;
+      if (world.timer <= 0) {
+        finishByTime();
+        return;
+      }
     }
+
+    updateRespawns(dt);
 
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
       if (!p.alive) continue;
-      const input = inputs[i];
+
+      p.invuln = Math.max(0, p.invuln - dt);
+      const rawInput = getInput(i);
+      const inputPower = Math.hypot(rawInput.x, rawInput.y);
+      const input = inputPower < tuning.deadZone ? { x: 0, y: 0 } : rawInput;
+
       p.vx += input.x * tuning.accel * dt;
       p.vy += input.y * tuning.accel * dt;
 
-      const speed = Math.hypot(p.vx, p.vy);
-      if (speed > tuning.maxSpeed) {
-        p.vx = (p.vx / speed) * tuning.maxSpeed;
-        p.vy = (p.vy / speed) * tuning.maxSpeed;
-      }
+      limitSpeed(p, tuning.maxSpeed);
 
-      p.vx *= Math.pow(tuning.friction, dt * 60);
-      p.vy *= Math.pow(tuning.friction, dt * 60);
+      const currentSpeed = Math.hypot(p.vx, p.vy);
+      let friction = inputPower < tuning.deadZone ? tuning.idleFriction : tuning.activeFriction;
+      if (currentSpeed > 8 && inputPower >= tuning.deadZone) {
+        const dot = (p.vx / currentSpeed) * input.x + (p.vy / currentSpeed) * input.y;
+        if (dot < -0.25) friction = tuning.reverseBrakeFriction;
+      }
+      p.vx *= Math.pow(friction, dt * 60);
+      p.vy *= Math.pow(friction, dt * 60);
+
+      applyEdgeSave(p, input, inputPower, dt);
+
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.squash = Math.max(0, p.squash - dt * 7);
@@ -157,6 +244,57 @@
     resolveCollision(players[0], players[1]);
     checkFalls();
     updateHud();
+  }
+
+  function updateRespawns(dt) {
+    for (const p of players) {
+      if (p.alive || p.stocks <= 0) continue;
+      p.respawnTimer -= dt;
+      if (p.respawnTimer <= 0) {
+        p.x = p.spawnX;
+        p.y = p.spawnY;
+        p.alive = true;
+        p.invuln = tuning.invulnTime;
+        stopPlayer(p);
+      }
+    }
+  }
+
+  function applyEdgeSave(p, input, inputPower, dt) {
+    const dx = p.x - world.cx;
+    const dy = p.y - world.cy;
+    const d = Math.hypot(dx, dy);
+    if (d <= world.arenaRadius * tuning.edgeGripStart || d <= 0.001) return;
+
+    const ox = dx / d;
+    const oy = dy / d;
+    const ix = -ox;
+    const iy = -oy;
+    const inwardInput = inputPower < tuning.deadZone ? 0 : Math.max(0, input.x * ix + input.y * iy);
+    const outwardVelocity = p.vx * ox + p.vy * oy;
+
+    // 端で中央側へ入力している時、外向き速度だけを強めに削る。
+    if (outwardVelocity > 0 && inwardInput > 0.18) {
+      const saveRate = Math.min(0.82, tuning.edgeSaveStrength * inwardInput);
+      const remove = outwardVelocity * saveRate * Math.min(1, dt * 60);
+      p.vx -= ox * remove;
+      p.vy -= oy * remove;
+    }
+
+    // 端ギリギリでは中央へ戻る操作を少しだけ補助。自動復帰ではなく、入力した時だけ効く。
+    if (inwardInput > 0.35 && d > world.arenaRadius - p.radius * 0.1) {
+      const assist = tuning.edgeInwardAssist * inwardInput * dt;
+      p.vx += ix * assist;
+      p.vy += iy * assist;
+    }
+  }
+
+  function limitSpeed(p, max) {
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > max) {
+      p.vx = (p.vx / speed) * max;
+      p.vy = (p.vy / speed) * max;
+    }
   }
 
   function resolveCollision(a, b) {
@@ -178,37 +316,87 @@
     b.x += nx * push;
     b.y += ny * push;
 
-    const rvx = b.vx - a.vx;
-    const rvy = b.vy - a.vy;
-    const rel = rvx * nx + rvy * ny;
-    const impact = Math.max(80, Math.abs(rel));
-    const impulse = (impact * tuning.collisionKick) / 2;
+    const avn = a.vx * nx + a.vy * ny;
+    const bvn = b.vx * nx + b.vy * ny;
+    const rel = bvn - avn;
+    let impact = Math.abs(rel);
 
-    a.vx -= nx * impulse;
-    a.vy -= ny * impulse;
-    b.vx += nx * impulse;
-    b.vy += ny * impulse;
-    a.squash = b.squash = Math.min(1, impact / 520);
-    world.shake = Math.min(12, world.shake + impact / 55);
+    if (rel < 0) {
+      // 同じ重さのボールとして、法線方向の速度を弾性反射させる。
+      const impulse = (-(1 + tuning.restitution) * rel) / 2;
+      a.vx -= nx * impulse;
+      a.vy -= ny * impulse;
+      b.vx += nx * impulse;
+      b.vy += ny * impulse;
+      impact = Math.max(tuning.minImpact, Math.abs(rel));
+    } else {
+      // めり込みだけ起きた時も、軽く離す程度の反射を入れる。
+      const nudge = Math.min(34, overlap * 2.1);
+      a.vx -= nx * nudge;
+      a.vy -= ny * nudge;
+      b.vx += nx * nudge;
+      b.vy += ny * nudge;
+      impact = Math.max(tuning.minImpact, nudge * 3.2);
+    }
+
+    limitSpeed(a, tuning.postCollisionMaxSpeed);
+    limitSpeed(b, tuning.postCollisionMaxSpeed);
+    a.squash = b.squash = Math.min(1, impact / 430);
+    world.shake = Math.min(13, world.shake + impact / 50);
   }
 
   function checkFalls() {
-    for (const p of players) {
+    let fellThisFrame = false;
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
       if (!p.alive) continue;
       const d = distFromCenter(p);
-      if (d > world.arenaRadius + p.radius * 0.55) {
-        p.alive = false;
-        p.vx *= 0.35;
-        p.vy *= 0.35;
+      if (d > world.arenaRadius + p.radius * tuning.fallForgiveness) {
+        loseStock(i);
+        fellThisFrame = true;
       }
     }
+    if (fellThisFrame) evaluateStockWin();
+  }
 
-    const alive = players.filter(p => p.alive);
-    if (alive.length === 1) {
-      endGame(`${alive[0].name} WIN!`, `${alive[0].name}が場外に押し出した！`);
-    } else if (alive.length === 0) {
-      endGame('DRAW!', '同時落下！これはこれで一番マリパしてる。');
+  function loseStock(index) {
+    const p = players[index];
+    p.stocks = Math.max(0, p.stocks - 1);
+    p.alive = false;
+    p.respawnTimer = p.stocks > 0 ? tuning.respawnTime : 0;
+    p.invuln = 0;
+    stopPlayer(p);
+    stickInputs[index] = { x: 0, y: 0 };
+    world.shake = Math.min(16, world.shake + 7);
+  }
+
+  function evaluateStockWin() {
+    const out = players.filter(p => p.stocks <= 0);
+    if (out.length === 0) return;
+    if (out.length === 2) {
+      endGame('DRAW!', '同時に最後のストックを失った！これはこれで一番マリパしてる。');
+      return;
     }
+    const winner = players.find(p => p.stocks > 0);
+    endGame(`${winner.name} WIN!`, `${winner.name}が最後まで乗り切った！`);
+  }
+
+  function finishByTime() {
+    const [a, b] = players;
+    if (a.stocks > b.stocks) {
+      endGame('RED WIN!', '時間切れ。ストックが多かったREDの勝ち！');
+      return;
+    }
+    if (b.stocks > a.stocks) {
+      endGame('BLUE WIN!', '時間切れ。ストックが多かったBLUEの勝ち！');
+      return;
+    }
+
+    const d0 = a.alive ? distFromCenter(a) : Infinity;
+    const d1 = b.alive ? distFromCenter(b) : Infinity;
+    if (Math.abs(d0 - d1) < 4) endGame('DRAW!', '時間切れ。ストックも位置もほぼ同じ！');
+    else if (d0 < d1) endGame('RED WIN!', '時間切れ。中央に近かったREDの勝ち！');
+    else endGame('BLUE WIN!', '時間切れ。中央に近かったBLUEの勝ち！');
   }
 
   function distFromCenter(p) {
@@ -226,8 +414,14 @@
     }
 
     ctx.save();
-    ctx.setTransform(canvas.width / world.w, 0, 0, canvas.height / world.h, 0, 0);
-    ctx.clearRect(0, 0, world.w, world.h);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const scale = Math.min(canvas.width / world.w, canvas.height / world.h);
+    const offsetX = (canvas.width - world.w * scale) / 2;
+    const offsetY = (canvas.height - world.h * scale) / 2;
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
 
     if (world.shake > 0.2) {
       const sx = (Math.random() - 0.5) * world.shake;
@@ -332,10 +526,10 @@
     const speed = Math.hypot(p.vx, p.vy);
     const angle = speed > 16 ? Math.atan2(p.vy, p.vx) : p.face > 0 ? 0 : Math.PI;
     const squash = p.squash;
-    const aliveAlpha = p.alive ? 1 : 0.32;
+    const aliveAlpha = p.alive ? (p.invuln > 0 ? 0.62 + 0.25 * Math.sin(performance.now() / 70) : 1) : 0.28;
 
     ctx.save();
-    ctx.globalAlpha = aliveAlpha;
+    ctx.globalAlpha = Math.max(0.28, aliveAlpha);
     ctx.translate(p.x, p.y);
     ctx.rotate(angle);
 
@@ -361,7 +555,7 @@
     ctx.fillStyle = ballGrad;
     ctx.fill();
     ctx.lineWidth = 6;
-    ctx.strokeStyle = 'rgba(255,255,255,.62)';
+    ctx.strokeStyle = p.invuln > 0 ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.62)';
     ctx.stroke();
 
     ctx.globalAlpha *= 0.22;
@@ -377,8 +571,7 @@
     // rider
     ctx.rotate(-angle);
     ctx.translate(0, -p.radius - 28);
-    ctx.beginPath();
-    ctx.roundRect(-23, 8, 46, 42, 16);
+    roundRect(ctx, -23, 8, 46, 42, 16);
     ctx.fillStyle = '#f3dfc8';
     ctx.fill();
     ctx.lineWidth = 5;
@@ -409,8 +602,8 @@
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,.45)';
     ctx.lineWidth = 6;
-    ctx.strokeText(p.name, 0, p.radius + 98);
-    ctx.fillText(p.name, 0, p.radius + 98);
+    ctx.strokeText(`${p.name} ♥${p.stocks}`, 0, p.radius + 98);
+    ctx.fillText(`${p.name} ♥${p.stocks}`, 0, p.radius + 98);
 
     ctx.restore();
 
@@ -426,6 +619,35 @@
       ctx.stroke();
       ctx.restore();
     }
+
+    if (!p.alive && p.stocks > 0) {
+      ctx.save();
+      ctx.font = '900 34px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.strokeStyle = 'rgba(0,0,0,.5)';
+      ctx.lineWidth = 7;
+      const text = `${p.name} 復帰中`;
+      ctx.strokeText(text, world.cx, p.name === 'RED' ? 210 : 790);
+      ctx.fillText(text, world.cx, p.name === 'RED' ? 210 : 790);
+      ctx.restore();
+    }
+  }
+
+  function roundRect(context, x, y, width, height, radius) {
+    if (typeof context.roundRect === 'function') {
+      context.beginPath();
+      context.roundRect(x, y, width, height, radius);
+      return;
+    }
+    const r = Math.min(radius, width / 2, height / 2);
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.arcTo(x + width, y, x + width, y + height, r);
+    context.arcTo(x + width, y + height, x, y + height, r);
+    context.arcTo(x, y + height, x, y, r);
+    context.arcTo(x, y, x + width, y, r);
+    context.closePath();
   }
 
   function drawVersion() {
@@ -460,12 +682,12 @@
         dx = (dx / len) * clamped;
         dy = (dy / len) * clamped;
       }
-      inputs[index] = { x: dx / max, y: dy / max };
+      stickInputs[index] = { x: dx / max, y: dy / max };
       stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     }
 
     function resetStick() {
-      inputs[index] = { x: 0, y: 0 };
+      stickInputs[index] = { x: 0, y: 0 };
       stick.style.transform = 'translate(-50%, -50%)';
       state.pointerId = null;
     }
@@ -485,6 +707,13 @@
 
   startButton.addEventListener('click', startGame);
   resetButton.addEventListener('click', () => resetGame({ start: false }));
+  timeSelect.addEventListener('change', () => {
+    if (!world.running) resetGame({ start: false });
+  });
+  stockSelect.addEventListener('change', () => {
+    if (!world.running) resetGame({ start: false });
+  });
+
   window.addEventListener('keydown', ev => {
     keys.add(ev.code);
     if (ev.code === 'Space' && !world.running) startGame();
