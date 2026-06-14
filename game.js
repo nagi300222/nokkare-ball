@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'v0.2.0-vertical-stocks-reflect';
+  const VERSION = 'v0.2.1-control-restore-reflect-tune';
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const timeLabel = document.getElementById('timeLabel');
@@ -32,17 +32,17 @@
   };
 
   const tuning = {
-    // v0.2: ぶつかった時に反射するが、逆方向入力で端でも耐えやすい設定。
-    accel: 810,
+    // v0.2.1: 操作感はv0.1.1へ戻し、反射だけ現在仕様に合わせて弱めに調整。
+    accel: 760,
     activeFriction: 0.956,
-    idleFriction: 0.872,
-    reverseBrakeFriction: 0.72,
-    maxSpeed: 360,
-    postCollisionMaxSpeed: 430,
+    idleFriction: 0.895,
+    reverseBrakeFriction: 0.84,
+    maxSpeed: 365,
+    postCollisionMaxSpeed: 405,
     playerRadius: 58,
-    collisionSpring: 0.96,
-    restitution: 0.78,
-    minImpact: 42,
+    collisionSpring: 0.88,
+    restitution: 0.56,
+    minImpact: 36,
     edgeGripStart: 0.86,
     edgeSaveStrength: 0.62,
     edgeInwardAssist: 470,
@@ -331,18 +331,18 @@
       impact = Math.max(tuning.minImpact, Math.abs(rel));
     } else {
       // めり込みだけ起きた時も、軽く離す程度の反射を入れる。
-      const nudge = Math.min(34, overlap * 2.1);
+      const nudge = Math.min(24, overlap * 1.55);
       a.vx -= nx * nudge;
       a.vy -= ny * nudge;
       b.vx += nx * nudge;
       b.vy += ny * nudge;
-      impact = Math.max(tuning.minImpact, nudge * 3.2);
+      impact = Math.max(tuning.minImpact, nudge * 2.7);
     }
 
     limitSpeed(a, tuning.postCollisionMaxSpeed);
     limitSpeed(b, tuning.postCollisionMaxSpeed);
-    a.squash = b.squash = Math.min(1, impact / 430);
-    world.shake = Math.min(13, world.shake + impact / 50);
+    a.squash = b.squash = Math.min(1, impact / 470);
+    world.shake = Math.min(11, world.shake + impact / 58);
   }
 
   function checkFalls() {
