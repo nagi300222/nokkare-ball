@@ -1,0 +1,48 @@
+{
+  "version": "v0.2.4-video-vector-physics",
+  "video_fps": 29.97002997002997,
+  "analysis_window_sec": [
+    15.55,
+    62.5
+  ],
+  "valid_detection_frames": 1176,
+  "stage_screen_center": [
+    322,
+    205
+  ],
+  "stage_screen_radius": [
+    250,
+    90
+  ],
+  "speed_world_units_per_sec": {
+    "median": 127,
+    "p75": 231,
+    "p90": 418,
+    "p95": 628
+  },
+  "accel_world_units_per_sec2": {
+    "median_positive": 370,
+    "p75_positive": 658,
+    "p95_positive": 1311
+  },
+  "deceleration_frame_ratio": {
+    "median": 0.921,
+    "p75": 0.961
+  },
+  "tuning": {
+    "accel": 760,
+    "activeFriction": 0.966,
+    "idleFriction": 0.918,
+    "reverseBrakeFriction": 0.808,
+    "maxSpeed": 365,
+    "postCollisionMaxSpeed": 485,
+    "restitution": 0.8,
+    "inputRestitutionBonus": 0.12,
+    "inputImpulseBonus": 42,
+    "inputTangentImpulse": 18,
+    "vectorBrakeAccel": 1320,
+    "vectorBrakeDrag": 3.2,
+    "faceTurnRate": 13.0,
+    "faceInputBias": 0.72
+  }
+}

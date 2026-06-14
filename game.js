@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'v0.2.3-video-reference-tuned';
+  const VERSION = 'v0.2.4-video-vector-physics';
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const timeLabel = document.getElementById('timeLabel');
@@ -32,26 +32,33 @@
   };
 
   const tuning = {
-    // v0.2.3: 参考動画からの近似チューニング。
-    // 最高速はやや重め、衝突は明確に弾くが、逆入力で吹っ飛び成分を消せる。
-    accel: 720,
-    activeFriction: 0.964,
-    idleFriction: 0.912,
-    reverseBrakeFriction: 0.835,
-    maxSpeed: 350,
-    postCollisionMaxSpeed: 455,
+    // v0.2.4: アップロード動画を簡易トラッキングして再調整。
+    // N64版の「重さ」は残しつつ、入力方向/キャラの向きで衝突後の反射と踏ん張りが変わる。
+    accel: 760,
+    activeFriction: 0.966,
+    idleFriction: 0.918,
+    reverseBrakeFriction: 0.808,
+    maxSpeed: 365,
+    postCollisionMaxSpeed: 485,
     playerRadius: 58,
-    positionCorrection: 0.82,
-    restitution: 0.88,
-    minBounceImpulse: 50,
-    separatingNudge: 32,
-    tangentDamping: 0.075,
-    minImpact: 42,
-    vectorBrakeDuration: 0.95,
-    vectorBrakeThreshold: 0.18,
-    vectorBrakeAccel: 1240,
-    vectorBrakeDrag: 2.85,
-    fallForgiveness: 0.76,
+    positionCorrection: 0.84,
+    restitution: 0.80,
+    inputRestitutionBonus: 0.12,
+    inputImpulseBonus: 42,
+    inputTangentImpulse: 18,
+    braceOnImpact: 0.20,
+    minBounceImpulse: 46,
+    separatingNudge: 36,
+    tangentDamping: 0.06,
+    minImpact: 40,
+    vectorBrakeDuration: 1.05,
+    vectorBrakeThreshold: 0.14,
+    vectorBrakeAccel: 1320,
+    vectorBrakeDrag: 3.2,
+    faceTurnRate: 13.0,
+    faceVelocityTurnRate: 5.4,
+    faceInputBias: 0.72,
+    fallForgiveness: 0.78,
     respawnTime: 1.0,
     invulnTime: 1.05,
     wallWarning: 0.9,
@@ -71,7 +78,7 @@
 
   const keys = new Set();
 
-  function makePlayer(name, color, spawnX, spawnY, face) {
+  function makePlayer(name, color, spawnX, spawnY, faceAngle) {
     return {
       name,
       color,
@@ -83,7 +90,11 @@
       vy: 0,
       radius: tuning.playerRadius,
       alive: true,
-      face,
+      faceAngle,
+      targetFaceAngle: faceAngle,
+      inputX: 0,
+      inputY: 0,
+      inputPower: 0,
       squash: 0,
       stocks: settings.stocks,
       respawnTimer: 0,
@@ -102,8 +113,8 @@
 
   function createPlayers() {
     players = [
-      makePlayer('RED', '#ff4d5a', 500, 355, 1),
-      makePlayer('BLUE', '#4bb4ff', 500, 645, -1),
+      makePlayer('RED', '#ff4d5a', 500, 355, Math.PI / 2),
+      makePlayer('BLUE', '#4bb4ff', 500, 645, -Math.PI / 2),
     ];
   }
 
@@ -214,6 +225,38 @@
     return stickInputs[index];
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function angleDelta(target, current) {
+    return Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  }
+
+  function rotateToward(current, target, maxStep) {
+    const diff = angleDelta(target, current);
+    if (Math.abs(diff) <= maxStep) return target;
+    return current + Math.sign(diff) * maxStep;
+  }
+
+  function updateFacing(p, input, inputPower, dt) {
+    if (inputPower >= tuning.deadZone) {
+      p.targetFaceAngle = Math.atan2(input.y, input.x);
+      p.faceAngle = rotateToward(p.faceAngle, p.targetFaceAngle, tuning.faceTurnRate * dt);
+      return;
+    }
+
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > 28) {
+      const velocityAngle = Math.atan2(p.vy, p.vx);
+      p.faceAngle = rotateToward(p.faceAngle, velocityAngle, tuning.faceVelocityTurnRate * dt);
+    }
+  }
+
+  function faceVector(p) {
+    return { x: Math.cos(p.faceAngle), y: Math.sin(p.faceAngle) };
+  }
+
   function step(dt) {
     if (!world.running) return;
     keyboardInput();
@@ -236,6 +279,11 @@
       const rawInput = getInput(i);
       const inputPower = Math.hypot(rawInput.x, rawInput.y);
       const input = inputPower < tuning.deadZone ? { x: 0, y: 0 } : rawInput;
+
+      p.inputX = input.x;
+      p.inputY = input.y;
+      p.inputPower = clamp(inputPower, 0, 1);
+      updateFacing(p, input, inputPower, dt);
 
       p.vx += input.x * tuning.accel * dt;
       p.vy += input.y * tuning.accel * dt;
@@ -291,7 +339,10 @@
 
     const hx = p.hitX / hitLen;
     const hy = p.hitY / hitLen;
-    const againstHit = -(input.x * hx + input.y * hy);
+    const face = faceVector(p);
+    const inputAgainstHit = -(input.x * hx + input.y * hy);
+    const faceAgainstHit = -(face.x * hx + face.y * hy) * clamp(inputPower, 0, 1);
+    const againstHit = Math.max(0, inputAgainstHit * tuning.faceInputBias + faceAgainstHit * (1 - tuning.faceInputBias));
     if (againstHit < tuning.vectorBrakeThreshold) return;
 
     // 衝突で吹っ飛んだ方向の速度成分だけを削る。
@@ -337,6 +388,8 @@
 
     const nx = dx / dist;
     const ny = dy / dist;
+    const tx = -ny;
+    const ty = nx;
     const overlap = minDist - dist;
 
     // 位置補正：重なりをほどいて、めり込みによる連続バグを抑える。
@@ -351,49 +404,70 @@
     const velAlongNormal = rvx * nx + rvy * ny;
     let impact = Math.abs(velAlongNormal);
 
+    const aFace = faceVector(a);
+    const bFace = faceVector(b);
+    const aPower = clamp(a.inputPower, 0, 1);
+    const bPower = clamp(b.inputPower, 0, 1);
+
+    // 入力方向とキャラの向きを混ぜて、「どちらへ押し込んでいるか」を計算。
+    // 中心方向ではなく、接触法線・接線に対してだけ判定する。
+    const aInputDrive = Math.max(0, a.inputX * nx + a.inputY * ny) * aPower;
+    const bInputDrive = Math.max(0, -(b.inputX * nx + b.inputY * ny)) * bPower;
+    const aFaceDrive = Math.max(0, aFace.x * nx + aFace.y * ny) * aPower;
+    const bFaceDrive = Math.max(0, -(bFace.x * nx + bFace.y * ny)) * bPower;
+    const aDrive = clamp(aInputDrive * tuning.faceInputBias + aFaceDrive * (1 - tuning.faceInputBias), 0, 1);
+    const bDrive = clamp(bInputDrive * tuning.faceInputBias + bFaceDrive * (1 - tuning.faceInputBias), 0, 1);
+
+    const aBrace = aDrive;
+    const bBrace = bDrive;
+    const driveSum = clamp(aDrive + bDrive, 0, 2);
+    const effectiveRestitution = clamp(tuning.restitution + driveSum * tuning.inputRestitutionBonus * 0.5, 0.55, 0.94);
+
     if (velAlongNormal < 0) {
       // 同じ質量の円として、法線方向に弾性衝突インパルスを入れる。
-      const impulseMag = Math.max(
+      // さらに「向いている/入力している方向」で、相手へ渡す反射を少し増やす。
+      const baseImpulse = Math.max(
         tuning.minBounceImpulse,
-        (-(1 + tuning.restitution) * velAlongNormal) / 2
+        (-(1 + effectiveRestitution) * velAlongNormal) / 2
       );
-      const ix = impulseMag * nx;
-      const iy = impulseMag * ny;
+      const impulseToA = (baseImpulse + tuning.inputImpulseBonus * bDrive) * (1 - tuning.braceOnImpact * aBrace);
+      const impulseToB = (baseImpulse + tuning.inputImpulseBonus * aDrive) * (1 - tuning.braceOnImpact * bBrace);
 
-      a.vx -= ix;
-      a.vy -= iy;
-      b.vx += ix;
-      b.vy += iy;
+      a.vx -= nx * impulseToA;
+      a.vy -= ny * impulseToA;
+      b.vx += nx * impulseToB;
+      b.vy += ny * impulseToB;
 
-      // 接線方向は少しだけならす。ピンボール化しすぎず、でも弾いた感は残す。
-      const tangentX = -ny;
-      const tangentY = nx;
-      const relTangent = rvx * tangentX + rvy * tangentY;
-      const tangentImpulse = relTangent * tuning.tangentDamping * 0.5;
-      a.vx += tangentX * tangentImpulse;
-      a.vy += tangentY * tangentImpulse;
-      b.vx -= tangentX * tangentImpulse;
-      b.vy -= tangentY * tangentImpulse;
+      // 接線方向は、相手の横をこすって抜ける感じを出す。
+      // 入力している横方向も少しだけ反射に乗せる。
+      const relTangent = rvx * tx + rvy * ty;
+      const aTangentDrive = (a.inputX * tx + a.inputY * ty) * aPower;
+      const bTangentDrive = (b.inputX * tx + b.inputY * ty) * bPower;
+      const tangentImpulse = relTangent * tuning.tangentDamping * 0.5 + (aTangentDrive - bTangentDrive) * tuning.inputTangentImpulse;
+      a.vx += tx * tangentImpulse;
+      a.vy += ty * tangentImpulse;
+      b.vx -= tx * tangentImpulse;
+      b.vy -= ty * tangentImpulse;
 
-      impact = Math.max(tuning.minImpact, impulseMag * 1.55);
+      impact = Math.max(tuning.minImpact, Math.max(impulseToA, impulseToB) * 1.52);
       rememberHitVector(a, -nx, -ny, impact);
       rememberHitVector(b, nx, ny, impact);
     } else {
       // すでに離れている時のめり込みは、軽い反発だけで処理する。
-      const nudge = Math.min(tuning.separatingNudge, overlap * 1.15);
-      a.vx -= nx * nudge;
-      a.vy -= ny * nudge;
-      b.vx += nx * nudge;
-      b.vy += ny * nudge;
-      impact = Math.max(tuning.minImpact, nudge * 2.2);
+      const nudge = Math.min(tuning.separatingNudge, overlap * 1.18);
+      a.vx -= nx * nudge * (1 - tuning.braceOnImpact * aBrace);
+      a.vy -= ny * nudge * (1 - tuning.braceOnImpact * aBrace);
+      b.vx += nx * nudge * (1 - tuning.braceOnImpact * bBrace);
+      b.vy += ny * nudge * (1 - tuning.braceOnImpact * bBrace);
+      impact = Math.max(tuning.minImpact, nudge * 2.15);
       rememberHitVector(a, -nx, -ny, impact);
       rememberHitVector(b, nx, ny, impact);
     }
 
     limitSpeed(a, tuning.postCollisionMaxSpeed);
     limitSpeed(b, tuning.postCollisionMaxSpeed);
-    a.squash = b.squash = Math.min(1, impact / 510);
-    world.shake = Math.min(12, world.shake + impact / 62);
+    a.squash = b.squash = Math.min(1, impact / 520);
+    world.shake = Math.min(12, world.shake + impact / 66);
   }
 
   function checkFalls() {
@@ -575,7 +649,7 @@
 
   function drawPlayer(p) {
     const speed = Math.hypot(p.vx, p.vy);
-    const angle = speed > 16 ? Math.atan2(p.vy, p.vx) : p.face > 0 ? 0 : Math.PI;
+    const angle = speed > 16 ? Math.atan2(p.vy, p.vx) : p.faceAngle;
     const squash = p.squash;
     const aliveAlpha = p.alive ? (p.invuln > 0 ? 0.62 + 0.25 * Math.sin(performance.now() / 70) : 1) : 0.28;
 
@@ -657,6 +731,25 @@
     ctx.fillText(`${p.name} ♥${p.stocks}`, 0, p.radius + 98);
 
     ctx.restore();
+
+    // Character/input facing marker. 反射計算に使う向きを見えるようにする。
+    if (p.alive) {
+      ctx.save();
+      ctx.globalAlpha = p.invuln > 0 ? 0.55 : 0.78;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.faceAngle);
+      ctx.beginPath();
+      ctx.moveTo(p.radius + 7, 0);
+      ctx.lineTo(p.radius - 11, -10);
+      ctx.lineTo(p.radius - 11, 10);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.fill();
+      ctx.restore();
+    }
 
     // Danger ring when close to edge
     const edgeRatio = distFromCenter(p) / world.arenaRadius;
