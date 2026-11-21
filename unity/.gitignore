@@ -1,0 +1,22 @@
+# Unity-generated
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+Build/
+Builds/
+.vs/
+.idea/
+*.csproj
+*.sln
+*.suo
+.DS_Store
+
+# Pulled, immutable source GLBs; no duplication in Git. Fetch from pinned source.
+Assets/Nokkare/Models/Imported/
+
+# Generated scene stores machine-local GUID references to fetched GLBs.
+# Re-create it with Tools > Nokkare > Create Prototype Scene.
+Assets/Nokkare/Scenes/Prototype.unity
+Assets/Nokkare/Scenes/Prototype.unity.meta
