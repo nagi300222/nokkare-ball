@@ -1,0 +1,35 @@
+{
+  "source_repo": "nagi300222/mamo-ken",
+  "source_commit": "a67a90af2c0774335f6a3aa95ed87a4ee9716cd4",
+  "source_prefix": "exp/fable-3d/chars",
+  "expected_animations_per_model": 37,
+  "models": {
+    "moguzo": {
+      "git_blob_sha": "955e6d534f9f2274efdad7d96a155c7ecc31e4bd"
+    },
+    "pisuke": {
+      "git_blob_sha": "7e86ef5dcd225cecfeda01d31ceba7206302de43"
+    },
+    "godan": {
+      "git_blob_sha": "53424f6a53a54ce57d6a314c383f4417e3f1cf23"
+    },
+    "hakuma": {
+      "git_blob_sha": "6ac22bbf2b485d1cd4790cf7c0a2b4fee4f56d04"
+    },
+    "chirka": {
+      "git_blob_sha": "599574119f4f1d902c3e203e64a60c6db06cd7d5"
+    },
+    "takimaru": {
+      "git_blob_sha": "59e41443b2bb5e2ac199d2b640811a1cf6248b49"
+    },
+    "yomikage": {
+      "git_blob_sha": "f2a5b220df26ffec42b60e9693251af139bf1d55"
+    },
+    "bullet": {
+      "git_blob_sha": "58407ac162bd3bef21ad4a2d141596552d618788"
+    },
+    "dark_moguzo": {
+      "git_blob_sha": "c098cb799725e13a26548978e73a3baaf9bcd328"
+    }
+  }
+}
