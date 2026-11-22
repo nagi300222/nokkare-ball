@@ -21,6 +21,12 @@ Optional batchmode:
 Unity -batchmode -nographics -quit -projectPath /ABSOLUTE/PATH/TO/unity -executeMethod Nokkare.Editor.NokkareModelAudit.RunBatchmodeAudit -logFile /ABSOLUTE/PATH/TO/unity.log
 ```
 
+**CI result (2026-11-22):** All nine original GLBs downloaded successfully; each matched its pinned Git blob SHA and contained 37 uniquely named clips. [GitHub Actions evidence](https://github.com/nagi300222/nokkare-ball/actions/runs/44985823282).
+
+**Web player material caveat:** glTFast may need relevant material/shader variants included in the final Unity Web build even when materials work in the Editor. Check the [official glTFast project setup notes](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/ProjectSetup.md).
+
+**Input setting caveat:** Unity's Input System package must be enabled under Player Settings → Active Input Handling for the P0 touchscreen path. Use the Input System (New) or Both; otherwise mobile touch is not implemented in the fallback branch. This is part of Codex Issue #2.
+
 **Limitations:** The Editor audit verifies clip presence; it does **not** automatically prove playable deformation, animator bindings, source-pose fidelity, correct ball mounting, FPS, or touch compatibility. Those remain in [Issue #3](https://github.com/nagi300222/nokkare-ball/issues/3) and [Issue #2](https://github.com/nagi300222/nokkare-ball/issues/2). Model files must stay immutable; scale/offset/animations should be configured on Unity instances/prefabs.
 
 ## Sources and permissions
