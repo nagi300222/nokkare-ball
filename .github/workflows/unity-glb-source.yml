@@ -1,0 +1,40 @@
+name: Unity GLB source integrity (real assets)
+
+on:
+  pull_request:
+    paths:
+      - 'unity/**'
+      - '.github/workflows/unity-glb-source.yml'
+  push:
+    branches:
+      - feat/unity-p1-real-glb-audit
+    paths:
+      - 'unity/**'
+      - '.github/workflows/unity-glb-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-nine-original-glbs:
+    name: Download & verify original nine GLBs (no Unity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download original pinned model binaries and check SHA1 + 37 named clips
+        working-directory: unity
+        run: python tools/sync_mamoken_models.py --all
+      - name: Verify unchanged files offline
+        working-directory: unity
+        run: python tools/sync_mamoken_models.py --all --verify-only
+      - name: Do not commit or upload original models
+        run: |
+          git status --porcelain --untracked-files=all
+          if git status --porcelain --untracked-files=all | grep -E 'Imported/.*\.glb'; then
+            echo "ERROR: imported model binaries must be ignored"; exit 1
+          fi
