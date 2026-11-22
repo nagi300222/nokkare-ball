@@ -83,7 +83,7 @@ namespace Nokkare.Editor
                 models = records
             };
 
-            var reportDir = Path.GetFullPath("BuildReports");
+            var reportDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "BuildReports"));
             Directory.CreateDirectory(reportDir);
             var reportPath = Path.Combine(reportDir, "nokkare-model-audit-" + scope + ".json");
             File.WriteAllText(reportPath, JsonUtility.ToJson(report, true));
